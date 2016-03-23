@@ -1,0 +1,135 @@
+#
+# Env. var definitions copied from /usr/bin/whonix_firewall
+# - won't be needed if whonix_firewall patched to run
+#   post-scripts.
+#
+
+
+[ -n "$iptables_cmd" ] || iptables_cmd="iptables --wait"
+[ -n "$ip6tables_cmd" ] || ip6tables_cmd="ip6tables --wait"
+
+
+## Get Tor username, distro specific!
+[ -n "$TOR_USER" ] || TOR_USER="$(id -u debian-tor)"
+
+## Get user uids.
+[ -n "$CLEARNET_USER" ] || CLEARNET_USER="$(id -u clearnet)"
+[ -n "$USER_USER" ] || USER_USER="$(id -u user)"
+[ -n "$ROOT_USER" ] || ROOT_USER="$(id -u root)"
+
+
+if [ -e /var/run/qubes-service/whonix-gateway ]; then
+   [ -n "$INT_IF" ] || INT_IF="vif+"
+   [ -n "$INT_TIF" ] || INT_TIF="vif+"
+fi
+
+## External interface
+[ -n "$EXT_IF" ] || EXT_IF="eth0"
+## Internal interface
+[ -n "$INT_IF" ] || INT_IF="eth1"
+## Internal "tunnel" interface, usually the same as
+## the Internal interface unless using vpn tunnels
+## between workstations and gateway
+[ -n "$INT_TIF" ] || INT_TIF="eth1"
+
+
+## Transparent Proxy Ports for Whonix-Workstation
+[ -n "$TRANS_PORT_WORKSTATION" ] || TRANS_PORT_WORKSTATION="9040"
+[ -n "$DNS_PORT_WORKSTATION" ] || DNS_PORT_WORKSTATION="5300"
+
+## Transparent Proxy Ports for Whonix-Gateway
+[ -n "$TRANS_PORT_GATEWAY" ] || TRANS_PORT_GATEWAY="9041"
+[ -n "$DNS_PORT_GATEWAY" ] || DNS_PORT_GATEWAY="5400"
+
+## Control Port Filter Proxy Port
+[ -n "$CONTROL_PORT_FILTER_PROXY_PORT" ] || CONTROL_PORT_FILTER_PROXY_PORT="9052"
+
+## Flash Proxy Port
+[ -n "$FLASHPROXY_PORT" ] || FLASHPROXY_PORT="9000"
+
+## Socks Ports for per application circuits.
+[ -n "$SOCKS_PORT_TOR_DEFAULT" ] || SOCKS_PORT_TOR_DEFAULT="9050"
+[ -n "$SOCKS_PORT_TB" ] || SOCKS_PORT_TB="9100"
+[ -n "$SOCKS_PORT_IRC" ] || SOCKS_PORT_IRC="9101"
+[ -n "$SOCKS_PORT_TORBIRDY" ] || SOCKS_PORT_TORBIRDY="9102"
+[ -n "$SOCKS_PORT_IM" ] || SOCKS_PORT_IM="9103"
+[ -n "$SOCKS_PORT_APT_GET" ] || SOCKS_PORT_APT_GET="9104"
+[ -n "$SOCKS_PORT_GPG" ] || SOCKS_PORT_GPG="9105"
+[ -n "$SOCKS_PORT_SSH" ] || SOCKS_PORT_SSH="9106"
+[ -n "$SOCKS_PORT_GIT" ] || SOCKS_PORT_GIT="9107"
+[ -n "$SOCKS_PORT_SDWDATE" ] || SOCKS_PORT_SDWDATE="9108"
+[ -n "$SOCKS_PORT_WGET" ] || SOCKS_PORT_WGET="9109"
+[ -n "$SOCKS_PORT_WHONIXCHECK" ] || SOCKS_PORT_WHONIXCHECK="9110"
+[ -n "$SOCKS_PORT_BITCOIN" ] || SOCKS_PORT_BITCOIN="9111"
+[ -n "$SOCKS_PORT_PRIVOXY" ] || SOCKS_PORT_PRIVOXY="9112"
+[ -n "$SOCKS_PORT_POLIPO" ] || SOCKS_PORT_POLIPO="9113"
+[ -n "$SOCKS_PORT_WHONIX_NEWS" ] || SOCKS_PORT_WHONIX_NEWS="9114"
+[ -n "$SOCKS_PORT_TBB_DOWNLOAD" ] || SOCKS_PORT_TBB_DOWNLOAD="9115"
+[ -n "$SOCKS_PORT_TBB_GPG" ] || SOCKS_PORT_TBB_GPG="9116"
+[ -n "$SOCKS_PORT_CURL" ] || SOCKS_PORT_CURL="9117"
+[ -n "$SOCKS_PORT_RSS" ] || SOCKS_PORT_RSS="9118"
+[ -n "$SOCKS_PORT_TORCHAT" ] || SOCKS_PORT_TORCHAT="9119"
+[ -n "$SOCKS_PORT_MIXMASTERUPDATE" ] || SOCKS_PORT_MIXMASTERUPDATE="9120"
+[ -n "$SOCKS_PORT_MIXMASTER" ] || SOCKS_PORT_MIXMASTER="9121"
+[ -n "$SOCKS_PORT_KDE" ] || SOCKS_PORT_KDE="9122"
+[ -n "$SOCKS_PORT_GNOME" ] || SOCKS_PORT_GNOME="9123"
+[ -n "$SOCKS_PORT_APTITUDE" ] || SOCKS_PORT_APTITUDE="9124"
+[ -n "$SOCKS_PORT_YUM" ] || SOCKS_PORT_YUM="9125"
+[ -n "$SOCKS_PORT_TBB_DEFAULT" ] || SOCKS_PORT_TBB_DEFAULT="9150"
+
+
+# via user from /etc/whonix_firewall.d/{somefile}
+VPN_INTERFACE=tun0
+
+# However, multiple servers, space separated, allowed.
+VPN_SERVERS="$myvpnserverip"
+
+# -------------------
+# New stuff:
+# -------------------
+
+XCEPTIP='$myxceptedip'
+
+
+# iptables-save output order:
+#  mangle  has - PREROUTING, INPUT, FORWARD, OUTPUT, POSTROUTING
+#     nat  has - PREROUTING, INPUT,          OUTPUT, POSTROUTING
+# (filter) has -             INPUT, FORWARD, OUTPUT
+# - whonix_firewall clears mangle, nat, and (filter).
+# - whonix_firewall doesn't do anything (else) with mangle.
+
+
+  IPT_FILTER_INPUT_LASTRULE='INPUT   -j DROP'
+IPT_FILTER_FORWARD_LASTRULE='FORWARD -j REJECT --reject-with icmp-admin-prohibited'
+ IPT_FILTER_OUTPUT_LASTRULE='OUTPUT  -j REJECT --reject-with icmp-admin-prohibited'
+
+  IPT_NAT_PREROUTING_LASTRULE='PREROUTING -i '"$INT_IF"' -p tcp --syn -j REDIRECT --to-ports '"$TRANS_PORT_WORKSTATION"''
+#      IPT_NAT_INPUT_LASTRULE='whonix_firewall doesn't use'
+#     IPT_NAT_OUTPUT_LASTRULE='OUTPUT -m owner --uid-owner      '"$TOR_USER"' -j RETURN'
+      IPT_NAT_OUTPUT_LASTRULE='OUTPUT -m owner --uid-owner '"$CLEARNET_USER"' -j RETURN'
+# echo WARNING: IPT_NAT_OUTPUT_LASTRULE should be \'OUTPUT -m owner --uid-owner "$CLEARNET_USER" -j RETURN\', but whonix_firewall script change necessary to so effect. i.e. Place this rule after the 'if'ed rules.
+# i.e. A relatively minor rule ordering change to make the clearnet rule the last one, since it isn't dependent upon an if statement.
+#IPT_NAT_POSTROUTING_LASTRULE='whonix_firewall doesn't use'
+
+
+#( set -o posix ; set ) | grep _LASTRULE | less -S
+#( set -o posix ; set ) | less -S
+echo
+echo whonix_firewall sets: FILTER - INPUT, FORWARD, OUTPUT\; NAT - PREROUTING, OUTPUT
+echo
+[ -n   "$IPT_FILTER_INPUT_LASTRULE" ] && echo "  IPT_FILTER_INPUT_LASTRULE = "\'$IPT_FILTER_INPUT_LASTRULE\'
+[ -n "$IPT_FILTER_FORWARD_LASTRULE" ] && echo "IPT_FILTER_FORWARD_LASTRULE = "\'$IPT_FILTER_FORWARD_LASTRULE\'
+[ -n  "$IPT_FILTER_OUTPUT_LASTRULE" ] && echo " IPT_FILTER_OUTPUT_LASTRULE = "\'$IPT_FILTER_OUTPUT_LASTRULE\'
+echo
+[ -n  "$IPT_NAT_PREROUTING_LASTRULE" ] && echo  IPT_NAT_PREROUTING_LASTRULE = \'$IPT_NAT_PREROUTING_LASTRULE\'
+[ -n       "$IPT_NAT_INPUT_LASTRULE" ] && echo       IPT_NAT_INPUT_LASTRULE = \'$IPT_NAT_INPUT_LASTRULE\'
+[ -n      "$IPT_NAT_OUTPUT_LASTRULE" ] && echo      IPT_NAT_OUTPUT_LASTRULE = \'$IPT_NAT_OUTPUT_LASTRULE\'
+[ -n "$IPT_NAT_POSTROUTING_LASTRULE" ] && echo IPT_NAT_POSTROUTING_LASTRULE = \'$IPT_NAT_POSTROUTING_LASTRULE\'
+
+
+#echo
+#for ev in            INPUT FORWARD OUTPUT ; do echo IPT_FILTER_${ev}_LASTRULE = \'$(eval "echo \${IPT_FILTER_${ev}_LASTRULE}")\' ; done
+#echo
+#for ev in PREROUTING INPUT         OUTPUT POSTROUTING ; do [ -n \"$(eval "echo \${IPT_NAT_$ev}_LASTRULE}")\" ] || echo    IPT_NAT_${ev}_LASTRULE = \'$(eval "echo    \${IPT_NAT_${ev}_LASTRULE}")\' ; done
+
+return 0

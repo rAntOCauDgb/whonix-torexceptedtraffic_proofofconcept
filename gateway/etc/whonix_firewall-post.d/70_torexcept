@@ -1,0 +1,184 @@
+iam=$(basename $BASH_SOURCE)
+mylockfile=/run/lock/WFP_${iam}_run
+
+if [ -e "$mylockfile" ]; then
+	echo ; echo $iam already run, lockfile $mylockfile present. Returning without running.
+	return 0
+fi
+
+echo ; echo Running $iam, setting lockfile ${mylockfile}.
+touch $mylockfile
+
+# whonix_firewall permits multiple VPN servers to be specified, space separated.
+# iptables, OTOH, requires the servers to be comma separated.
+
+VPNIPS="${VPN_SERVERS// /,}"
+echo -e "\nExtrapolating VPN IPs of '$VPNIPS' from '$VPN_SERVERS'.\n"
+
+# For the moment, put in log entries so we can watch what isn't getting trapped
+# - rules prior to them will match, never get this far, and not show the msgs.
+#
+# For the moment only worry about 192.168.2.1 - if that is getting past, and
+# app still not working, worry about other logging, then.
+
+# Note that iptables -t nat INPUT, OUTPUT, and POSTROUTING, default to accept.
+# - note that -t nat OUTPUT RETURNS if uid cleanet.
+
+# eventually put in port specific rules. For the moment just get working at all.
+
+
+# Note: whonix_firewall INPUT rules:
+# - drop all weird/erroneous things
+# - accept all in from lo
+# - accept all established
+# - deny all icmp
+# - allow all in from tun0
+# - drop all (last rule)
+
+set -v -x
+
+# ----------------------------------------
+# Delete current iptables INPUT last rule.
+$iptables_cmd -D $IPT_FILTER_INPUT_LASTRULE
+
+#$iptables_cmd -I INPUT 11 -i $VPN_INTERFACE -p icmp --icmp-type destination-unreachable -j LOG  --log-prefix "iptfil_inp-icmprej: "
+#$iptables_cmd -I INPUT 12 -i $VPN_INTERFACE -p icmp --icmp-type destination-unreachable -j ACCEPT
+
+# Could specify -i eth1 here, but being logging, eye any 2.1 from anywhere.
+#$iptables_cmd -I INPUT 14 -s $XCEPTIP -j LOG --log-level 2 --log-prefix "iptfil_inp-tap0_s: "
+#$iptables_cmd -I INPUT 15 -d $XCEPTIP -j LOG --log-level 2 --log-prefix "iptfil_inp-tap0_d: "
+
+# Reapply old iptables INPUT last rule.
+ $iptables_cmd -A $IPT_FILTER_INPUT_LASTRULE
+# ---------------------------------------
+
+
+# Note: whonix_firewall FORWARD REJECT all (last rule)
+
+# ---------------------------------------
+# Delete current iptables FORWARD last rule.
+$iptables_cmd -D $IPT_FILTER_FORWARD_LASTRULE
+
+# Let icmp destination unreachable (tun0->eth1) go through so it stops trying.
+# iptables -A FORWARD -i $VPN_INTERFACE -o $INT_IF -p icmp --icmp-type destination-unreachable -j LOG  --log-prefix "iptfil_fwd-unreach: "
+# iptables -A FORWARD -i $VPN_INTERFACE -o $INT_IF -p icmp --icmp-type destination-unreachable -j ACCEPT
+# VPN Server also sends same, directly. Let them come in from anywhere.
+  iptables -A FORWARD -o $INT_IF -p icmp --icmp-type destination-unreachable -j ACCEPT
+#
+
+# Perhaps not needed.
+# iptables -A FORWARD -i tun0 -o eth1 -m state --state ESTABLISHED  -j ACCEPT
+# iptables -A FORWARD -i tun0 -o eth0 -m state --state RELATED,ESTABLISHED -j ACCEPT
+# iptables -A FORWARD -i eth0 -o tun0 -j ACCEPT
+#
+
+$iptables_cmd -A FORWARD -i $INT_IF -o $VPN_INTERFACE -s $XCEPTIP -j ACCEPT
+$iptables_cmd -A FORWARD -i $VPN_INTERFACE -o $INT_IF -d $XCEPTIP -j ACCEPT
+
+# Torrents want to talk to VPN server (presumably) to open ports for
+# forwarding. (*1)
+$iptables_cmd -A FORWARD -i $INT_IF -s $XCEPTIP -d $VPNIPS -j ACCEPT
+
+
+# Could specify -i&|o eth1 here, but being logging, eye any 2.1 from anywhere.
+#$iptables_cmd -A FORWARD -s $XCEPTIP -j LOG --log-level 2 --log-prefix "iptfil_fwd-tap0_s: "
+#$iptables_cmd -A FORWARD -d $XCEPTIP -j LOG --log-level 2 --log-prefix "iptfil_fwd-tap0_d: "
+
+# Reapply old iptables FORWARD last rule.
+$iptables_cmd -A $IPT_FILTER_FORWARD_LASTRULE
+# ---------------------------------------
+
+
+# Note: whonix_firewall OUTPUT rules:
+# - reject all weird/erroneous things
+# - accept all to tun0
+# - accept all established
+# - accept all LOCAL_NETS
+# - accept all to vpn server ip
+# - accept all from clearnet userid
+# - reject all (last rule)
+
+# ---------------------------------------
+# Delete current iptables OUTPUT last rule.
+iptables -D $IPT_FILTER_OUTPUT_LASTRULE
+
+# Could specify -o eth1 here, but being logging, eye any 2.1 from anywhere.
+#$iptables_cmd -A OUTPUT -s $XCEPTIP -j LOG --log-level 2 --log-prefix "iptfil_out-tap0_s: "
+#$iptables_cmd -A OUTPUT -d $XCEPTIP -j LOG --log-level 2 --log-prefix "iptfil_out-tap0_d: "
+
+# Reapply old iptables FORWARD last rule.
+$iptables_cmd -A $IPT_FILTER_OUTPUT_LASTRULE
+# ---------------------------------------
+
+
+
+# Note: whonix_firewall -t nat PREROUTING rules:
+# - redir (incoming) eth1 tor/9xxx ports to self (tor) equivalents.
+# - redir eth1 udp/dns to self (tor) :5300
+# - redir eth1 tcp to self: 9040 (tor) (last rule)
+
+# ---------------------------------------
+# Delete old iptables -t nat PREROUTING last rule.
+$iptables_cmd -t nat -D $IPT_NAT_PREROUTING_LASTRULE
+
+#$iptables_cmd -t nat -A PREROUTING -s $XCEPTIP -j ACCEPT
+# not needed ... establishe? $iptables_cmd -t nat -A PREROUTING -d $XCEPTIP -j ACCEPT
+
+$iptables_cmd -t nat -I PREROUTING -i $INT_IF -s $XCEPTIP -j ACCEPT
+
+
+#$iptables_cmd -t nat -I PREROUTING 2 -s $XCEPTIP -j LOG --log-level 2 --log-prefix "iptnat_pre-tap0_s: "
+#$iptables_cmd -t nat -I PREROUTING 3 -d $XCEPTIP -j LOG --log-level 2 --log-prefix "iptnat_pre-tap0_d: "
+
+
+
+# Reapply old iptables -t nat PREROUTING last rule.
+$iptables_cmd -t nat -A $IPT_NAT_PREROUTING_LASTRULE
+# ---------------------------------------
+
+
+# Note: whonix_firewall -t nat INPUT rules: none.
+# - Default ACCEPT, so won't be in any way.
+
+# Note: whonix_firewall -t nat OUTPUT rules: none.
+# - Default ACCEPT, so won't be in any way.
+
+
+# Note: whonix_firewall -t nat POSTROUTING rules: none.
+# - Default ACCEPT, so won't be in any way.
+
+# ---------------------------------------
+# Delete old iptables -t nat POSTOUTING last rule.
+# - except ... it doesn't currently have any rules.
+# $iptables_cmd -t nat -D $IPT_NAT_POSTROUTING_LASTRULE
+
+#iptables -t nat -A POSTROUTING -o $VPN_INTERFACE -s $XCEPTIP -j LOG --log-level 2 --log-prefix "iptnat_pst-masq: "
+iptables -t nat -A POSTROUTING -o $VPN_INTERFACE -s $XCEPTIP -j MASQUERADE
+# shouldn't be needed - iptables -t nat -A POSTROUTING -o $VPN_INTERFACE -d $XCEPTIP -j MASQUERADE
+
+
+# See (*1).
+$iptables_cmd -t nat -A POSTROUTING -s $XCEPTIP -d $VPNIPS -j MASQUERADE
+
+
+#$iptables_cmd -t nat -A POSTROUTING -s $XCEPTIP -j LOG --log-level 2 --log-prefix "iptnat_pst-tap0_s: "
+#$iptables_cmd -t nat -A POSTROUTING -d $XCEPTIP -j LOG --log-level 2 --log-prefix "iptnat_pst-tap0_d: "
+
+# Reapply old iptables -t nat POSTROUTING last rule.
+# $iptables_cmd -t nat -A $IPT_NAT_POSTROUTING_LASTRULE
+# ---------------------------------------
+
+set +v +x
+echo
+
+# Enable forwarding.
+echo -n "/proc/sys/net/ipv4/ip_forward \(forwarding\) was: "
+cat /proc/sys/net/ipv4/ip_forward
+echo 1 > /proc/sys/net/ipv4/ip_forward
+echo -n "/proc/sys/net/ipv4/ip_forward \(forwarding\) now: "
+cat /proc/sys/net/ipv4/ip_forward
+
+
+return 0
+
+

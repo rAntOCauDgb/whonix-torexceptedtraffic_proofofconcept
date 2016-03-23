@@ -1,0 +1,34 @@
+iam=$(basename $BASH_SOURCE)
+mylockfile=/run/lock/WFP_${iam}_run
+
+if [ -e "$mylockfile" ]; then
+	echo ; echo $iam already run, lockfile $mylockfile present. Returning without running.
+	return 0
+fi
+
+echo ; echo Running $iam, setting lockfile ${mylockfile}.
+touch $mylockfile
+
+set -v -x
+
+# Delete old iptables INPUT last rule.
+$iptables_cmd -D $IPT_FILTER_INPUT_LASTRULE
+
+$iptables_cmd -A INPUT -i eth1 -p tcp --dport 22 -j ACCEPT
+$iptables_cmd -A INPUT -i eth0 -p tcp --dport 2222 -j ACCEPT
+
+# Reapply old iptables INPUT last rule.
+$iptables_cmd -A $IPT_FILTER_INPUT_LASTRULE
+
+
+# Delete old iptables -t nat PREROUTING last rule.
+$iptables_cmd -t nat -D $IPT_NAT_PREROUTING_LASTRULE
+
+$iptables_cmd -t nat -A PREROUTING -i eth1 -p tcp --dport 22 -j ACCEPT
+$iptables_cmd -t nat -A PREROUTING -i eth0 -p tcp --dport 2222 -j ACCEPT
+
+# Reapply old iptables -t nat PREROUTING last rule.
+$iptables_cmd -t nat -A $IPT_NAT_PREROUTING_LASTRULE
+
+set +v +x
+return 0
